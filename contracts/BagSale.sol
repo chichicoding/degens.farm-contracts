@@ -1,37 +1,27 @@
-
 // SPDX-License-Identifier: MIT
-
+// Degen Farm. Collectible NFT game
 pragma solidity ^0.7.4;
 
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/access/Ownable.sol";
 import "./BagsERC20.sol";
 
 contract BagSale is Ownable {
-    using SafeMath for uint256;
+    using SafeMath for uint256; 
 
-    struct itemPrice {
-        uint256 price;
-        uint256 total;
-        uint256 sold;
-    }
-
-    uint256 constant SALE_AFTER = 0;
+    //TODO!!!!!!!!!!UNCOMMENT THIS BEFORE PRODUCTION and set value
+    //uint256 constant SALE_AFTER = 0; //!!!!! Set in production!!!!
     Bags immutable bagsContract;
+    
+    //TODO!!!!!!!!!! REMOVE THIS BEFORE  PRODUCTIN
+    uint256 public SALE_AFTER = 0;
+    uint256 public bagPrice;
+    uint256 public weiRaised;
 
-
-    //Price =  A` * B`^N,
-    //Price =  0,0500 *(1,0028^N) where N - purchase round number
-    //Price ~ A * B^N *1e18/1e4
-    // B is expressed as last_price state variable (see bellow)
     uint256 public A = 10028;        //multiplied on 1e4
     uint256 public percentWant = 3;  //like slippage in Uniswap
 
-    uint256 public last_price;
-    uint256 public weiRaised;
-    mapping(uint8 => itemPrice) salesBook;
-
-    event BagBought(address indexed _buyer, uint256 _wantPrice, uint256 _bougthPrice, uint256 amount);
-
+    event BagBought(address indexed _buyer, uint256 _wantPrice, uint256 _boughtPrice, uint256 amount);
+ 
     /**
      * @dev Set some initial params for sale.
      *
@@ -41,7 +31,7 @@ contract BagSale is Ownable {
      */
     constructor(Bags _erc20) {
         bagsContract = _erc20;
-        last_price = 5e16; //initial price value (B in formula)
+        bagPrice = 1e17; //initial price value (B in formula)
     }
 
     /**
@@ -53,25 +43,12 @@ contract BagSale is Ownable {
      */
     function buyBag(uint256 _wantPrice) external payable {
         require(block.timestamp > SALE_AFTER, "Can't by before SALE_AFTER");
-        uint256 _price = _nextPrice(1);
-        uint256  _diff;
-        if (_wantPrice >= _price) {
-            _diff = _wantPrice.sub(_price);
-        }
-        else {
-            _diff = _price.sub(_wantPrice);
-        }
-
-        if (_diff <= _price.div(100).mul(percentWant)) {
-            _price = _wantPrice;
-        }
-        require(msg.value >= _price, "Need more ether!");
-        uint256 mintAmount = msg.value.mul(10**bagsContract.decimals()).div(_price);
-        require(mintAmount <= 10e18, "Cant't buy more than 10 per tx!");
+        require(msg.value >= bagPrice, "Need more ether!");
+        uint256 mintAmount = msg.value.mul(10**bagsContract.decimals()).div(bagPrice);
+        // require(mintAmount <= 10e18, "Cant't buy more than 10 per tx!");
         bagsContract.mint(msg.sender, mintAmount);
-        last_price = _nextPrice(mintAmount/10**bagsContract.decimals());
         weiRaised = weiRaised.add(msg.value);
-        emit BagBought(msg.sender, _wantPrice, _price, mintAmount);
+        emit BagBought(msg.sender, _wantPrice, bagPrice, mintAmount);
     }
 
     /**
@@ -80,6 +57,17 @@ contract BagSale is Ownable {
     function withdraw() external onlyOwner {
         msg.sender.transfer(address(this).balance);
     }
+
+    
+    //TODO Remove before PRODUCTION  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    function setSaleStart(uint256 _start_date) external onlyOwner {
+        SALE_AFTER = _start_date;
+    }
+
+    function setBagPrice(uint256 _bagPrice) external onlyOwner {
+        bagPrice = _bagPrice;
+    }
+
 
     /**
      * @dev Returns amount of bags that available for sale yet
@@ -96,7 +84,7 @@ contract BagSale is Ownable {
     }
 
     /**
-     * @dev Function returns tuple with next price  according to the bonding
+     * @dev Function returns tuple with next price  according to the bonding 
      * curve (1) and left amount of BAGs token (2)
      *
      * @return (uint256, uint256)
@@ -113,7 +101,7 @@ contract BagSale is Ownable {
     function _nextPrice(uint256 _bagsCount) internal view returns (uint256) {
         //Because last_price expressed in wei we dont need mul(1e18)
         //but still need div(1e4) - see comment above near A and B declaration
-        uint256 _price = last_price.mul(A**_bagsCount).div(10**(4*_bagsCount));
-        return _price;
+        //uint256 _price = last_price.mul(A**_bagsCount).div(10**(4*_bagsCount));
+        return bagPrice;
     }
 }
