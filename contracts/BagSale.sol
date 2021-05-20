@@ -14,13 +14,10 @@ contract BagSale is Ownable {
     
     //TODO!!!!!!!!!! REMOVE THIS BEFORE  PRODUCTIN
     uint256 public SALE_AFTER = 0;
-    uint256 public bagPrice;
+    uint256 public bagPrice = 1e17;
     uint256 public weiRaised;
 
-    uint256 public A = 10028;        //multiplied on 1e4
-    uint256 public percentWant = 3;  //like slippage in Uniswap
-
-    event BagBought(address indexed _buyer, uint256 _wantPrice, uint256 _boughtPrice, uint256 amount);
+    event BagBought(address indexed _buyer, uint256 _boughtPrice, uint256 amount);
  
     /**
      * @dev Set some initial params for sale.
@@ -31,24 +28,20 @@ contract BagSale is Ownable {
      */
     constructor(Bags _erc20) {
         bagsContract = _erc20;
-        bagPrice = 1e17; //initial price value (B in formula)
     }
 
     /**
-     * @dev Call this Function for buy bag for ether with  _wantPrice. Every
-     * next purchase will be more expensive. So you can tell contract price
-     * that you may pay. And if diff is less then 3% you will buy with your price
+     * @dev Call this Function for buy bag for ether 
      *
-     * @param _wantPrice - desired reasonable price
      */
-    function buyBag(uint256 _wantPrice) external payable {
+    function buyBag() external payable {
         require(block.timestamp > SALE_AFTER, "Can't by before SALE_AFTER");
         require(msg.value >= bagPrice, "Need more ether!");
         uint256 mintAmount = msg.value.mul(10**bagsContract.decimals()).div(bagPrice);
         // require(mintAmount <= 10e18, "Cant't buy more than 10 per tx!");
         bagsContract.mint(msg.sender, mintAmount);
         weiRaised = weiRaised.add(msg.value);
-        emit BagBought(msg.sender, _wantPrice, bagPrice, mintAmount);
+        emit BagBought(msg.sender, bagPrice, mintAmount);
     }
 
     /**
@@ -59,11 +52,12 @@ contract BagSale is Ownable {
     }
 
     
-    //TODO Remove before PRODUCTION  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    //TODO: Remove before PRODUCTION  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     function setSaleStart(uint256 _start_date) external onlyOwner {
         SALE_AFTER = _start_date;
     }
 
+    //TODO: Remove before PRODUCTION  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     function setBagPrice(uint256 _bagPrice) external onlyOwner {
         bagPrice = _bagPrice;
     }
