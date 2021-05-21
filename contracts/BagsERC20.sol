@@ -11,7 +11,7 @@ contract Bags is ERC20, Ownable {
     uint256 immutable public MAX_BAGS;
 
     constructor(uint256 _maxBags)
-        ERC20("Degens Farm Bags", "BAGZ")
+        ERC20("Degen$ Farm Bags", "BAGZ")
     {
         MAX_BAGS = _maxBags;
     }

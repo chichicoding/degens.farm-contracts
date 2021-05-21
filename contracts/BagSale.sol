@@ -12,7 +12,7 @@ contract BagSale is Ownable {
     //uint256 constant SALE_AFTER = 0; //!!!!! Set in production!!!!
     Bags immutable bagsContract;
     
-    //TODO!!!!!!!!!! REMOVE THIS BEFORE  PRODUCTIN
+    //TODO!!!!!!!!!! REMOVE THIS BEFORE  PRODUCTION
     uint256 public SALE_AFTER = 0;
     uint256 public bagPrice = 1e17;
     uint256 public weiRaised;
