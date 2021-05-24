@@ -3,10 +3,9 @@
 pragma solidity ^0.7.4;
 pragma experimental ABIEncoderV2;
 
-import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC721/ERC721.sol";
-import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/access/Ownable.sol";
+import "./ERC721URIStorage.sol";
 
-contract Creatures is ERC721, Ownable {
+contract Creatures is ERC721URIStorage {
 
     enum AnimalType {
         Cow, Horse, Rabbit, Chicken, Pig, Cat, Dog, Goose, Goat, Sheep,
