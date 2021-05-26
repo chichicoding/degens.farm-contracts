@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Degen Farm. Collectible NFT game
+// Degen'$ Farm: Collectible NFT game (https://degens.farm)
 pragma solidity ^0.7.4;
 
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC20/ERC20.sol";
@@ -11,7 +11,7 @@ contract Bags is ERC20, Ownable {
     uint256 immutable public MAX_BAGS;
 
     constructor(uint256 _maxBags)
-        ERC20("Degen$ Farm Bags", "BAGZ")
+    ERC20("Degen$ Farm Bags", "BAGZ")
     {
         MAX_BAGS = _maxBags;
     }
