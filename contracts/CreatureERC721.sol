@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// // Degen Farm. Collectible NFT game
+// Degen'$ Farm: Collectible NFT game (https://degens.farm)
 pragma solidity ^0.7.4;
 pragma experimental ABIEncoderV2;
 
@@ -42,7 +42,7 @@ contract Creatures is ERC721URIStorage {
         uint8 _animalType,
         uint8 _rarity,
         uint32 index
-        ) external onlyOwner {
+    ) external onlyOwner {
 
         _mint(to, tokenId);
         animals[tokenId] = Animal(AnimalType(_animalType), Rarity(_rarity), index, uint64(block.timestamp), "");
@@ -64,9 +64,13 @@ contract Creatures is ERC721URIStorage {
         return (uint8(animals[_tokenId].atype), uint8(animals[_tokenId].rarity));
     }
 
+    function getBirthdayAndRarity(uint256 _tokenId) external view returns(uint64, uint8) {
+        return (animals[_tokenId].birthday, uint8(animals[_tokenId].rarity));
+    }
+
     function getUsersTokens(address _owner) external view returns (uint256[] memory) {
         //We can return only uint256[] memory
-         uint256 n = balanceOf(_owner);
+        uint256 n = balanceOf(_owner);
 
         uint256[] memory result = new uint256[](n);
         for (uint16 i=0; i < n; i++) {
@@ -80,7 +84,7 @@ contract Creatures is ERC721URIStorage {
     }
 
     /**
-     * @dev Overriding standart function for gas safe traiding with trusted parts like DegenFarm
+     * @dev Overriding standard function for gas safe traiding with trusted parts like DegenFarm
      * Requirements:
      *
      * - `from` and `to` cannot be the zero address.

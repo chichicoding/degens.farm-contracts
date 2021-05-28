@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Degen Farm. Collectible NFT game
+// Degen'$ Farm: Collectible NFT game (https://degens.farm)
 pragma solidity ^0.7.4;
 
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC20/IERC20.sol";
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/access/Ownable.sol";
 
-contract Operators is Ownable
-{
+contract Operators is Ownable {
     mapping (address=>bool) operatorAddress;
 
     modifier onlyOperator() {
@@ -36,8 +35,7 @@ contract Operators is Ownable
      * @dev Owner can claim any tokens that transferred
      * to this contract address
      */
-    function withdrawERC20(IERC20 _tokenContract, address _admin) external onlyOwner
-    {
+    function withdrawERC20(IERC20 _tokenContract, address _admin) external onlyOwner {
         uint256 balance = _tokenContract.balanceOf(address(this));
         _tokenContract.transfer(_admin, balance);
     }
