@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Degen Farm. Collectible NFT game
+// Degen'$ Farm: Collectible NFT game (https://degens.farm)
 pragma solidity ^0.7.4;
 
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC20/IERC20.sol";
@@ -8,12 +8,6 @@ import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/access/Ownable.sol";
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/math/SafeMath.sol";
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/math/Math.sol";
 
-interface IDung is IERC20 {
-    function mint(
-        address to, 
-        uint256 amount 
-        ) external;
-}
 /**
  * @dev this contract forked from
  * https://github.com/Synthetixio/Unipool/blob/master/contracts/Unipool.sol
@@ -23,12 +17,10 @@ contract Compost is Ownable {
 	using SafeMath  for uint256;
 	using SafeERC20 for IERC20;
     
-    //uint256 public PERIOD_DURATION = 1 days; //PRODUCTION
-    //uint256 public PERIOD_DURATION = 1 hours; //RINKEBY
-    uint256 public PERIOD_DURATION = 29 days; 
+    uint256 public PERIOD_DURATION = 29 days;
 
-    IERC20 public uniLP;
-    IDung  public dung;
+    IERC20 public LPToken;
+    IERC20  public dung;
     
     uint256 private _totalSupply; 
     mapping(address => uint256) private _balances;
@@ -46,9 +38,9 @@ contract Compost is Ownable {
     event RewardPaid(address indexed user, uint256 reward);
     event Harvested(address indexed user);
 
-    constructor (IDung _dung, IERC20 _unilp) {
+    constructor (IERC20 _dung, IERC20 _lptoken) {
     	dung  = _dung;
-    	uniLP = _unilp;
+    	LPToken = _lptoken;
     }
 
     modifier updateReward(address _account) {
@@ -100,7 +92,7 @@ contract Compost is Ownable {
         
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
-        uniLP.safeTransferFrom(msg.sender, address(this), amount);
+        LPToken.safeTransferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
     }
 
@@ -108,7 +100,7 @@ contract Compost is Ownable {
     	require(amount > 0, "Cannot withdraw 0");
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        uniLP.safeTransfer(msg.sender, amount);
+        LPToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -126,7 +118,7 @@ contract Compost is Ownable {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
             rewards[msg.sender] = 0;
-            dung.mint(msg.sender, reward);
+            dung.transfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
     }

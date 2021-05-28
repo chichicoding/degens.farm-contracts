@@ -6,15 +6,15 @@ import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/access/Ownable.sol";
 import "./BagsERC20.sol";
 
 contract BagSale is Ownable {
-    using SafeMath for uint256;
+    using SafeMath for uint256; 
 
     Bags immutable bagsContract;
-
+    
     uint256 public bagPrice = 1e17;
     uint256 public weiRaised;
 
     event BagBought(address indexed _buyer, uint256 _boughtPrice, uint256 amount);
-
+ 
     /**
      * @dev Set some initial params for sale.
      *
@@ -27,7 +27,7 @@ contract BagSale is Ownable {
     }
 
     /**
-     * @dev Call this Function for buy bag for ether
+     * @dev Call this Function for buy bag for ether 
      *
      */
     function buyBag() external payable {
@@ -60,7 +60,7 @@ contract BagSale is Ownable {
     }
 
     /**
-     * @dev Function returns tuple with next price  according to the bonding
+     * @dev Function returns tuple with next price  according to the bonding 
      * curve (1) and left amount of BAGs token (2)
      *
      * @return (uint256, uint256)

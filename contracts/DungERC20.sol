@@ -6,13 +6,13 @@ import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC20/ERC20.so
 import "./MinterRole.sol";
 
 contract Dung is ERC20, MinterRole {
-    using SafeMath for uint256;
+	using SafeMath for uint256;
 
     uint256 public constant INITIAL_MINT = 1000000e33;
 
     constructor()
-    ERC20("Degen$ Farm Dung", "DUNG")
-    MinterRole(msg.sender)
+        ERC20("Degen$ Farm Dung", "DUNG")
+        MinterRole(msg.sender)
     {
         _mint(msg.sender, INITIAL_MINT);
     }
@@ -25,10 +25,10 @@ contract Dung is ERC20, MinterRole {
         _burn(msg.sender, amount);
     }
 
-    /**
-    * @dev Owner can claim any tokens that transfered
-    * to this contract address
-    */
+     /**
+     * @dev Owner can claim any tokens that transfered
+     * to this contract address
+     */
     function reclaimToken(ERC20 token) external onlyMinter {
         require(address(token) != address(0));
         uint256 balance = token.balanceOf(address(this));
