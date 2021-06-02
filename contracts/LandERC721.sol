@@ -9,7 +9,7 @@ contract Land is ERC721URIStorage {
 
     uint constant public MAP_HEIGHT = 50;
     uint constant public LAND_TYPE_COUNT = 5;
-    enum LandType  { None, Clay, Sandy, Loamy, Chalky, Peaty }
+    enum LandType  { None, Clay, Chalky, Sandy, Loamy, Peaty }
 
     struct LandPiece {
         LandType atype; // uint8
@@ -26,17 +26,17 @@ contract Land is ERC721URIStorage {
         string memory symbol_) ERC721(name_, symbol_)  {
     }
 
-    function mint(address to, uint256 tokenId) external onlyOwner {
+    function mint(address to, uint256 tokenId, uint randomSeed) external onlyOwner {
         int32 x = (int32)(tokenId / MAP_HEIGHT);
         int32 y = (int32)(tokenId % MAP_HEIGHT);
-        LandPiece memory land = LandPiece(_createLandType(x, y), x, y);
+        LandPiece memory land = LandPiece(_createLandType(x, y, randomSeed), x, y);
         lands[tokenId] = land;
         _mint(to, tokenId);
     }
 
-    function _createLandType(int32 x, int32 y) internal returns (LandType) {
-        uint256 rnd = uint(keccak256(abi.encodePacked(block.timestamp, msg.sender, totalSupply()))) % LAND_TYPE_COUNT;
-        return (LandType)(rnd + 1);
+    function _createLandType(int32 x, int32 y, uint randomSeed) internal returns (LandType) {
+        uint256 chosen = randomSeed % LAND_TYPE_COUNT;
+        return (LandType)(chosen + 1);
     }
 
     function burn(uint256 tokenId) external {
@@ -65,14 +65,14 @@ contract Land is ERC721URIStorage {
     }
 
     /**
-     * @dev Overriding standart function for gas safe traiding with trusted parts like DegenFarm
+     * @dev Overriding standard function for gas safe traiding with trusted parts like DegenFarm
      * Requirements:
      *
      * - `from` and `to` cannot be the zero address.
      * - `caller` must be added to trustedMarkets.
      */
     function transferFrom(address from, address to, uint256 tokenId) public override {
-        if  (trusted_markets[msg.sender]) {
+        if (trusted_markets[msg.sender]) {
             _transfer(from, to, tokenId);
         } else {
             super.transferFrom(from, to, tokenId);
