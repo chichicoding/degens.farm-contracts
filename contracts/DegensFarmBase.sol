@@ -6,55 +6,57 @@ pragma experimental ABIEncoderV2;
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC20/IERC20.sol";
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC1155/IERC1155.sol";
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC1155/ERC1155Receiver.sol";
-import "./EggERC721.sol";
+import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC721/IERC721.sol";
+import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/access/Ownable.sol";
+
+interface IEggs is IERC721 {
+    function mint(address to, uint256 tokenId) external;
+    function burn(uint256 tokenId) external;
+    function getUsersTokens(address _owner) external view returns (uint256[] memory);
+}
 
 
 interface ICreatures is IERC721 {
-    function mintWithURI(
-        address to,
-        uint256 tokenId,
-        string memory _tokenURI,
+    function mint(
+        address to, 
+        uint256 tokenId, 
         uint8 _animalType,
-        uint8 _rarity
-    ) external;
+        uint8 _rarity,
+        uint32 index
+        ) external;
 
-    //function editAnimalNextFarm(uint256 tokenId, uint256  _nextFarmTime) external;
-    function setName(uint256 tokenId, string memory _name) external;
     function getTypeAndRarity(uint256 _tokenId) external view returns(uint8, uint8);
-    //function getAnimalNextFarm(uint256 _tokenId) external view returns(uint256);
 }
 
 interface ILand is IERC721 {
-    function mintWithURI(
-        address to,
-        uint256 tokenId,
-        string memory _tokenURI
+    function mint(
+        address to, 
+        uint256 tokenId
     ) external;
     function burn(uint256 tokenId) external;
 }
 
 interface IDung is IERC20 {
     function mint(
-        address to,
-        uint256 amount
+        address to, 
+        uint256 amount 
     ) external;
 }
 
 interface IInventory is IERC1155 {
-    function getToolBoost(uint8 _item) external view returns (uint16);
-
+     function getToolBoost(uint8 _item) external view returns (uint16);
 }
 
 interface IAmuletPriceProvider {
-    function getLastPrice(address _amulet) external view returns (uint256);
+     function getLastPrice(address _amulet) external view returns (uint256);
 }
 
-abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
+abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
 
     enum   AnimalType {Cow,    Horse, Rabbit, Chicken, Pig, Cat, Dog, Goose, Goat, Sheep}
     enum   Rarity     {Normie, Chad,  Degen}
     enum   Result     {Fail,   Dung,  Chad, Degen}
-
+    
     //External conatrct addresses used with this farm.
     struct AddressRegistry {
         address land;
@@ -81,8 +83,8 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         uint16 total;
         uint16 left;
     }
-
-    //Record  represent one farming act
+ 
+    // Record  represent one farming act
     struct FarmRecord {
         uint256   creatureId;
         uint256   landId;
@@ -100,31 +102,36 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         uint16 amuletBullTrend;
         uint16 inventoryHold;
     }
-    uint8   constant public CREATURE_TYPE_COUNT_MAX = 10;  //how much creatures types may be used
-    uint16  public MAX_LANDS          = getCreatureTypeCount() * 50 + 9; //how much lands may be used
-    uint16  public MAX_ALL_NORMIES    = getCreatureTypeCount() * 40; //subj
+
+    uint8   constant public CREATURE_TYPE_COUNT_MAX = 20;  //how much creatures types may be used
+
+    uint16  public MAX_ALL_NORMIES    = getCreatureTypeCount() * getNormieCountInType(); //subj
     uint256 constant public NFT_ID_MULTIPLIER  = 10000;     //must be set more then all Normies count
     uint256 constant public FARM_DUNG_AMOUNT   = 1e18;      //per one harvest
     uint16  constant public BONUS_POINTS_AMULET_HOLD       = 10;
     uint16  constant public BONUS_POINTS_AMULET_BULL_TREND = 90;
-
+    
     //Common Amulet addresses
     address[3] public COMMON_AMULETS = [
-    0xa0246c9032bC3A600820415aE600c6388619A14D,
-    0x87d73E916D7057945c9BcD8cdd94e42A6F47f776,
-    0x126c121f99e1E211dF2e5f8De2d96Fa36647c855
+        0xa0246c9032bC3A600820415aE600c6388619A14D, 
+        0x87d73E916D7057945c9BcD8cdd94e42A6F47f776,
+        0x126c121f99e1E211dF2e5f8De2d96Fa36647c855
     ];
 
     bool    public REVEAL_ENABLED  = false;
     bool    public FARMING_ENABLED = false;
     address public priceProvider;
-
+    IEggs    public eggs;
+    
     address[][10]                  public amulets; //amulets for creatures
     AddressRegistry                public farm;
     LandCount                      public landCount;
+    address[][CREATURE_TYPE_COUNT_MAX] public amulets; //amulets for creatures
+    AddressRegistry                    public farm;
+    LandCount                          public landCount;
 
     //common token price snapshots
-    mapping(uint256 => uint256[3]) public commonAmuletPrices;
+    mapping(uint256 => uint256[3]) public commonAmuletPrices; 
 
     // mapping from user to his(her) staked tools
     // Index of uint256[6] represent tool NFT  itemID
@@ -137,21 +144,22 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
 
     event Reveal(uint256 indexed _tokenId, bool _isCreature, uint8 _animalType);
     event Harvest(
-        uint256 indexed _eggId,
-        address farmer,
+        uint256 indexed _eggId, 
+        address farmer, 
         uint8   result ,
-        uint16  baseChance,
+        uint16  baseChance, 
         uint16  amuletHold,
         uint16  amuletBullTrend,
         uint16  inventoryHold
     );
-
+    
     constructor (
-        address _land,
+        address _land, 
         address _creatures,
         address _inventory,
         address _bagstoken,
-        address _dungtoken
+        address _dungtoken,
+        IEggs _eggs
     )
     {
         farm.land      = _land;
@@ -159,16 +167,24 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         farm.inventory = _inventory;
         farm.bagstoken = _bagstoken;
         farm.dungtoken = _dungtoken;
-
-        // Index of creaturesBorn in this initial setting
+        
+        // Index of creaturesBorn in this initial setting  
         // must NOT exceed CREATURE_TYPE_COUNT
         for (uint i = 0; i < getCreatureTypeCount(); i++) {
-            creaturesBorn[i] = CreaturesCount(40, 40, 10, 10, 1, 1, 40, 10);
+            creaturesBorn[i] = CreaturesCount(
+                getNormieCountInType(), // totalNormie;
+                getNormieCountInType(), // leftNormie;
+                getChadCountInType(),   // totalChad;
+                getChadCountInType(),   // leftChadToDiscover;
+                1,                      // totalDegen;
+                1,                      // leftDegenToDiscover;
+                getNormieCountInType(), // leftChadFarmAttempts;
+                getChadCountInType());  // leftDegenFarmAttempts;
         }
 
-        landCount        = LandCount(MAX_LANDS, MAX_LANDS);
+        landCount        = LandCount(getMaxLands(), getMaxLands());
         allNormiesesLeft = MAX_ALL_NORMIES;
-
+        eggs = _eggs;
     }
 
     /**
@@ -182,6 +198,7 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         require(_isRevelEnabled(), "Please wait for reveal enabled.");
         require(count > 0, "Count must be positive");
         require(count <= 1000, "Count must less than 1000");
+        require(count <= 8, "Count must less than 9"); // random limit
         require(
             IERC20(farm.bagstoken).allowance(msg.sender, address(this)) >= count*1e18,
             "Please approve your BAGS token to this contract."
@@ -189,34 +206,36 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         require(
             IERC20(farm.bagstoken).transferFrom(msg.sender, address(this), count*1e18)
         );
+        uint randomSeed = uint(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
+        // random seed for 8 reveals (8x32=256)
         for (uint i = 0; i < count; i++) {
             _reveal();
+            _reveal(randomSeed);
+            randomSeed = randomSeed / 0x100000000; // shift right 32 bits
         }
     }
 
     /**
-     * @dev Start farming process. New NFT - Egg will minted for user
+     * @dev Start farming process. New NFT - Egg will minted for user 
      * @param _creatureId - NFT tokenId, caller must be owner of this token
      * @param _landId -- NFT tokenId, caller must be owner of this token
      */
     function farmDeploy(uint256 _creatureId, uint256 _landId) external {
         require(FARMING_ENABLED == true, "Chief Farmer not enable yet");
-        require(ICreatures(farm.creatures).ownerOf(_creatureId) == msg.sender,
-            "Need to be Creature Owner!"
+        require(ICreatures(farm.creatures).ownerOf(_creatureId) == msg.sender, 
+            "Need to be Creature Owner"
         );
-        //        require(ICreatures(farm.creatures).getAnimalNextFarm(_creatureId)
-        //            < block.timestamp, "Please wait!"
-        //        );
         require(ILand(farm.land).ownerOf(_landId) == msg.sender,
-            "Need to be Land Owner!"
+            "Need to be Land Owner"
         );
-
 
         (uint8 crType, uint8 crRarity) = ICreatures(farm.creatures).getTypeAndRarity(_creatureId);
-        require(crRarity != 2, "Cant farm with DEGEN.");
+        require((DegenFarmBase.Rarity)(crRarity) == Rarity.Normie ||
+            (DegenFarmBase.Rarity)(crRarity) == Rarity.Chad,
+            "Can farm only Normie and Chad");
 
         //Check that farming available yet
-        if  (crRarity == 0) {
+        if (crRarity == 0) {
             require(creaturesBorn[crType].leftChadToDiscover > 0, "No more chads left");
         } else {
             require(creaturesBorn[crType].leftDegenToDiscover > 0, "No more Degen left");
@@ -231,40 +250,35 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         //3. Save deploy record
         farming.push(
             FarmRecord({
-        creatureId:    _creatureId,
-        landId:        _landId,
-        harvestTime:   block.timestamp + getFarmingDuration(),
-        amuletsPrice1: prices1,
-        amuletsPrice2: prices2,
-        harvest:       Result(0),
-        harvestId:     0,
-        commonAmuletInitialHold: _getCommonAmuletsHoldState(msg.sender) //save initial hold state
-        })
+                creatureId:    _creatureId,
+                landId:        _landId,
+                harvestTime:   block.timestamp + getFarmingDuration(),
+                amuletsPrice1: prices1,
+                amuletsPrice2: prices2,
+                harvest:       Result.Fail,
+                harvestId:     0, 
+                commonAmuletInitialHold: _getCommonAmuletsHoldState(msg.sender) //save initial hold state
+            })
         );
 
-        //Let's  mint Egg. Mint is internal so use mintWithURI instead this.mintWithURI
-        mintWithURI(
-            msg.sender,         //farmer
-            farming.length - 1, //tokenId
-            ''
+        // Let's  mint Egg.
+        eggs.mint(
+            msg.sender,         // farmer
+            farming.length - 1  // tokenId
         );
-        //3. Set next farm date for creature
-        //        ICreatures(farm.creatures).editAnimalNextFarm(
-        //            _creatureId, block.timestamp + NEXT_FARMING_DELAY
-        //        );
         //STAKE LAND  and Creatures!!!!
         ILand(farm.land).transferFrom(msg.sender, address(this), _landId);
-        ICreatures(farm.creatures).transferFrom(msg.sender, address(this),_creatureId);
+        ICreatures(farm.creatures).transferFrom(msg.sender, address(this), _creatureId);
     }
 
     /**
-     * @dev Finish farming process. Egg NFT will be  burn
+     * @dev Finish farming process. Egg NFT will be  burn 
      * @param _deployId - NFT tokenId, caller must be owner of this token
      */
     function harvest(uint256 _deployId) external {
 
-        require(ownerOf(_deployId) == msg.sender, "This is NOT YOUR EGG!");
-
+        require(eggs.ownerOf(_deployId) == msg.sender, "This is NOT YOUR EGG");
+        
         FarmRecord storage f = farming[_deployId];
         require(f.harvestTime <= block.timestamp, "To early for harvest");
         //Lets Calculate Dung/CHAD-DEGEN chance
@@ -278,22 +292,22 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         if  (crRarity == 0) {
             //Try farm CHAD. So if there is no CHADs any more we must return assets
             if  (creaturesBorn[crType].leftChadToDiscover == 0) {
-                _endFarming(_deployId, Result(0));
+                _endFarming(_deployId, Result.Fail);
                 return;
             }
             baseChance = creaturesBorn[crType].leftChadToDiscover * 100
-            /(creaturesBorn[crType].leftChadFarmAttempts);
+                /(creaturesBorn[crType].leftChadFarmAttempts);
             //Decrease appropriate farm ATTEMPTS COUNT!!!
             creaturesBorn[crType].leftChadFarmAttempts -= 1;
         } else {
 
             //Try farm DEGEN. So if there is no DEGENSs any more we must return assets
             if  (creaturesBorn[crType].leftDegenToDiscover == 0) {
-                _endFarming(_deployId, Result(0));
+                _endFarming(_deployId, Result.Fail);
                 return;
             }
             baseChance = creaturesBorn[crType].leftDegenToDiscover * 100
-            /(creaturesBorn[crType].leftDegenFarmAttempts);
+                /(creaturesBorn[crType].leftDegenFarmAttempts);
             //Decrease appropriate farm ATTEMPTS COUNT!!!
             creaturesBorn[crType].leftDegenFarmAttempts -= 1;
         }
@@ -312,11 +326,11 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
                 bonus.amuletHold = BONUS_POINTS_AMULET_HOLD;
                 //Lets check Bull TREND
                 if  (_getCommonAmuletPrices(f.harvestTime - getFarmingDuration())[i]
-                    <  _getCommonAmuletPrices(block.timestamp)[i]
-                )
-                {
-                    bonus.amuletBullTrend = BONUS_POINTS_AMULET_BULL_TREND;
-                }
+                        <  _getCommonAmuletPrices(block.timestamp)[i]
+                    ) 
+                    {
+                       bonus.amuletBullTrend = BONUS_POINTS_AMULET_BULL_TREND; 
+                    }
                 break;
             }
         }
@@ -329,7 +343,7 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
                     bonus.amuletHold = BONUS_POINTS_AMULET_HOLD;
                     //Lets check Bull TREND
                     if (f.amuletsPrice1[i] < prices2[i]) {
-                        bonus.amuletBullTrend = BONUS_POINTS_AMULET_BULL_TREND;
+                       bonus.amuletBullTrend = BONUS_POINTS_AMULET_BULL_TREND; 
                     }
                     break;
                 }
@@ -338,71 +352,76 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         //////////////////////////////////////////////
 
 
-        //////////////////////////////////////////////
-        //4. Bonus for inventory
+        ////////////////////////////////////////////// 
+        //4. Bonus for inventory 
         //////////////////////////////////////////////
         bonus.inventoryHold = 0;
-        if (userStakedTools[msg.sender].length > 0) {
-            for (uint8 i=0; i<userStakedTools[msg.sender].length; i++) {
-                if  (userStakedTools[msg.sender][i] > 0){
-                    bonus.inventoryHold = bonus.inventoryHold
-                    + IInventory(farm.inventory).getToolBoost(i);
-                }
-            }
-        }
+        if (userStakedTools[msg.sender].length > 0) { 
+           for (uint8 i=0; i<userStakedTools[msg.sender].length; i++) {
+               if  (userStakedTools[msg.sender][i] > 0){
+                   bonus.inventoryHold = bonus.inventoryHold 
+                   + IInventory(farm.inventory).getToolBoost(i);
+               }
+           }
+        }  
         //////////////////////////////////////////////
 
-        uint16 allBonus = bonus.amuletHold
-        + bonus.amuletBullTrend
-        + bonus.inventoryHold;
+        uint16 allBonus = bonus.amuletHold 
+            + bonus.amuletBullTrend 
+            + bonus.inventoryHold;
         uint8 chanceOfRarityUP = uint8(
             (baseChance + allBonus) * 100 / (100 + allBonus)
         );
-        uint8[] memory choiceWeight = new uint8[](2);
-        choiceWeight[0] = chanceOfRarityUP;
+        uint8[] memory choiceWeight = new uint8[](2); 
+        choiceWeight[0] = chanceOfRarityUP; 
         choiceWeight[1] = 100 - chanceOfRarityUP;
         uint8 choice = uint8(_getWeightedChoice(choiceWeight));
 
         if (choice == 0) {
             f.harvestId = (crRarity + 1) * NFT_ID_MULTIPLIER + _deployId;
-            //Mint new chad/degen
-            ICreatures(farm.creatures).mintWithURI(
-                msg.sender,
-                (crRarity + 1) * NFT_ID_MULTIPLIER + _deployId, // new iD
-                '',
-                crType, //AnimalType
-                crRarity + 1
-            );
-            //Decrease appropriate CREATRURE COUNT!!!
-            if  (crRarity + 1 == uint8(Rarity.Chad)) {
+            // Mint new chad/degen
+
+            uint32 index;
+            //Decrease appropriate CREATRURE COUNT
+            if (crRarity + 1 == uint8(Rarity.Chad)) {
+                index = creaturesBorn[crType].totalChad - creaturesBorn[crType].leftChadToDiscover;
                 creaturesBorn[crType].leftChadToDiscover -= 1;
                 farmingResult = Result.Chad;
             } else if (crRarity + 1 == uint8(Rarity.Degen)) {
+                index = creaturesBorn[crType].totalDegen - creaturesBorn[crType].leftDegenToDiscover;
                 creaturesBorn[crType].leftDegenToDiscover -= 1;
                 farmingResult = Result.Degen;
             }
+
+            ICreatures(farm.creatures).mint(
+                msg.sender, 
+                (crRarity + 1) * NFT_ID_MULTIPLIER + _deployId, // new iD
+                crType, //AnimalType
+                crRarity + 1,
+                index // index
+            );
         } else {
-            //Mint new dung
+        //Mint new dung
             IDung(farm.dungtoken).mint(msg.sender, FARM_DUNG_AMOUNT);
             farmingResult = Result.Dung;
         }
-
+        
         //BURN Land
         ILand(farm.land).burn(f.landId);
         _endFarming(_deployId, farmingResult);
         emit Harvest(
-            _deployId,
-            msg.sender,
+            _deployId, 
+            msg.sender, 
             uint8(farmingResult),
             baseChance,
             bonus.amuletHold,
             bonus.amuletBullTrend,
-            bonus.inventoryHold
+            bonus.inventoryHold 
         );
     }
 
     /**
-     * @dev Stake one inventory item
+     * @dev Stake one inventory item 
      * @param _itemId - NFT tokenId, caller must be owner of this token
      */
     function stakeOneTool(uint8 _itemId) external {
@@ -410,7 +429,7 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
     }
 
     /**
-     * @dev UnStake one inventory item
+     * @dev UnStake one inventory item 
      * @param _itemId - NFT tokenId
      */
 
@@ -438,7 +457,7 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         REVEAL_ENABLED = _isEnabled;
     }
 
-    function enableFarming(bool _isEnabled) external onlyOwner {
+     function enableFarming(bool _isEnabled) external onlyOwner {
         FARMING_ENABLED = _isEnabled;
     }
     ////////////////////////////////////////////////////////
@@ -449,40 +468,43 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
 
     function _getCreatureAmulets(uint8 _creatureType) internal view returns (address[] memory) {
         return amulets[_creatureType];
-    }
+    } 
 
-    function getCreatureStat(uint8 _creatureType)
-    external
-    view
-    returns (
-        uint16,
-        uint16,
-        uint16,
-        uint16,
-        uint16,
-        uint16,
-        uint16,
-        uint16
-    )
+    function getCreatureStat(uint8 _creatureType) 
+        external 
+        view 
+        returns (
+            uint16, 
+            uint16, 
+            uint16, 
+            uint16, 
+            uint16, 
+            uint16,
+            uint16,
+            uint16 
+        )
     {
         CreaturesCount storage stat = creaturesBorn[_creatureType];
         return (
-        stat.totalNormie,
-        stat.leftNormie,
-        stat.totalChad,
-        stat.leftChadToDiscover,
-        stat.totalDegen,
-        stat.leftDegenToDiscover,
-        stat.leftChadFarmAttempts,
-        stat.leftDegenFarmAttempts
+            stat.totalNormie, 
+            stat.leftNormie, 
+            stat.totalChad, 
+            stat.leftChadToDiscover, 
+            stat.totalDegen, 
+            stat.leftDegenToDiscover,
+            stat.leftChadFarmAttempts,
+            stat.leftDegenFarmAttempts
         );
     }
-
 
     function getWeightedChoice(uint8[] memory _weights) external view returns (uint8){
         return _getWeightedChoice(_weights);
     }
 
+    function _getWeightedChoice(uint8[] memory _weights) internal view returns (uint8){
+        uint randomSeed = uint(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
+        return _getWeightedChoice2(_weights, randomSeed);
+    }
 
     function getFarmingById(uint256 _farmingId) external view returns (FarmRecord memory) {
         return farming[_farmingId];
@@ -496,9 +518,9 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         return _getOneAmuletPrice(_token);
     }
 
-
+    
     ///////////////////////////////////////////////
-    ///  Internals                          ///////
+    ///  Internals                          ///////                   
     ///////////////////////////////////////////////
     /**
      * @dev Save farming results in storage and mint
@@ -508,24 +530,24 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         //TODO need refactor if EGGs will be
         FarmRecord storage f = farming[_deployId];
         f.harvest = _res;
-        //unstake creatuer
+        // unstake creature
         ICreatures(farm.creatures).transferFrom(address(this), msg.sender, f.creatureId);
-        _burn(_deployId); //Burn EGG
+        eggs.burn(_deployId); // Burn EGG
 
         if  (_res ==  Result.Fail) {
             //unstake land (if staked)
             if (ILand(farm.land).ownerOf(f.landId) == address(this)){
-                ILand(farm.land).transferFrom(address(this), msg.sender, f.landId);
+               ILand(farm.land).transferFrom(address(this), msg.sender, f.landId);
             }
             emit Harvest(
-                _deployId,
-                msg.sender,
+                _deployId, 
+                msg.sender, 
                 uint8(_res),
                 0, //baseChance
                 0, //bonus.amuletHold,
                 0, //bonus.amuletBullTrend,
-                0  //bonus.inventoryHold
-            );
+                0  //bonus.inventoryHold 
+            );   
         } else {
             // TODO: burn land
         }
@@ -542,10 +564,10 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
 
         //stake
         IInventory(farm.inventory).safeTransferFrom(
-            msg.sender,
-            address(this),
-            _itemId,
-            1,
+            msg.sender, 
+            address(this), 
+            _itemId, 
+            1, 
             bytes('0')
         );
         userStakedTools[msg.sender][_itemId] = block.timestamp;
@@ -559,10 +581,10 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         );
         userStakedTools[msg.sender][_itemId] = 0;
         IInventory(farm.inventory).safeTransferFrom(
-            address(this),
-            msg.sender,
-            _itemId,
-            1,
+            address(this), 
+            msg.sender, 
+            _itemId, 
+            1, 
             bytes('0')
         );
 
@@ -591,33 +613,33 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
     }
 
     function _getCommonAmuletsHoldState(address _farmer) internal view returns (bool[3] memory) {
-
+        
         //If token balance =0 - set false
         bool[3] memory res;
         for (uint8 i=0; i < COMMON_AMULETS.length; i++){
             if  (IERC20(COMMON_AMULETS[i]).balanceOf(_farmer) > 0){
-                res[i] = true;
+                res[i] = true;    
             } else {
-                // Set to zero if token balance is 0
+            // Set to zero if token balance is 0   
                 res[i] = false;
             }
         }
         return res;
     }
 
-    function _getExistingAmuletsPrices(address[] memory _tokens)
-    internal
-    view
-    returns (uint256[] memory)
+    function _getExistingAmuletsPrices(address[] memory _tokens) 
+        internal 
+        view 
+        returns (uint256[] memory) 
     {
         uint256[] memory res = new uint256[](_tokens.length);
         for (uint8 i=0; i < _tokens.length; i++){
             if  (IERC20(_tokens[i]).balanceOf(msg.sender) > 0){
-                res[i] = _getOneAmuletPrice(_tokens[i]);
+                res[i] = _getOneAmuletPrice(_tokens[i]);    
             } else {
-                // Set to zero if token balance is 0
+            // Set to zero if token balance is 0   
                 res[i] = 0;
-            }
+            }    
         }
         return res;
     }
@@ -632,54 +654,61 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
     }
 
     function _reveal() internal {
+    function _reveal(uint randomSeed) internal {
         require ((landCount.left + allNormiesesLeft) > 0, "Sorry, no more reveal!");
         //1. Lets choose Land OR Creature, %
         //So we have two possible results. 1 - Land, 0 - Creature.
         // sum of weights = 100, lets define weigth for Creature
-        uint8[] memory choiceWeight = new uint8[](2);
-        choiceWeight[0] = uint8(allNormiesesLeft * 100 / (allNormiesesLeft + landCount.left));
+        uint8[] memory choiceWeight = new uint8[](2); 
+        choiceWeight[0] = uint8(allNormiesesLeft * 100 / (allNormiesesLeft + landCount.left)); 
         choiceWeight[1] = 100 - choiceWeight[0];
         uint8 choice = uint8(_getWeightedChoice(choiceWeight));
+        uint8 choice = uint8(_getWeightedChoice2(choiceWeight, randomSeed));
         //Check that choice can be executed
         if (choice != 0 && landCount.left == 0) {
             //Theres no more Land!!! So we need change choice
+            //There are no more Lands. So we need change choice
             choice = 0;
         }
 
-        if  (choice == 0) {
-            uint8[] memory choiceWeight = new uint8[](getCreatureTypeCount());
+        if (choice == 0) {
+        if (choice == 0) { // create creature
+            uint8[] memory choiceWeight0 = new uint8[](getCreatureTypeCount());
             //2. Ok, Creature will  be born. But what kind of?
             for (uint8 i = 0; i < getCreatureTypeCount(); i ++) {
-                choiceWeight[i] = uint8(creaturesBorn[i].leftNormie);
+                choiceWeight0[i] = uint8(creaturesBorn[i].leftNormie);
             }
-            choice = uint8(_getWeightedChoice(choiceWeight));
-            ICreatures(farm.creatures).mintWithURI(
-                msg.sender,
+            choice = uint8(_getWeightedChoice(choiceWeight0));
+            choice = uint8(_getWeightedChoice2(choiceWeight0, randomSeed / 0x10000)); // shift right 16 bits
+            ICreatures(farm.creatures).mint(
+                msg.sender, 
                 MAX_ALL_NORMIES - allNormiesesLeft,
-                '',
                 choice, //AnimalType
-                0
+                0,
+                creaturesBorn[choice].totalNormie - creaturesBorn[choice].leftNormie // index
             );
             emit Reveal(MAX_ALL_NORMIES - allNormiesesLeft, true, choice);
             allNormiesesLeft -= 1;
             creaturesBorn[choice].leftNormie -= 1;
         } else {
-            ILand(farm.land).mintWithURI(
-                msg.sender,
-                MAX_LANDS - landCount.left,
-                ''
+        } else { // create land
+            ILand(farm.land).mint(
+                msg.sender, 
+                getMaxLands() - landCount.left
             );
-            emit Reveal(MAX_LANDS - landCount.left , false, 0);
-            landCount.left -= 1;
+            emit Reveal(getMaxLands() - landCount.left , false, 0);
+            landCount.left -= 1; 
         }
     }
 
     function _getWeightedChoice(uint8[] memory _weights)  internal view returns (uint8){
+    function _getWeightedChoice2(uint8[] memory _weights, uint randomSeed) internal view returns (uint8){
         uint256 sum_of_weights;
         for (uint8 i = 0; i < _weights.length; i++) {
             sum_of_weights += _weights[i];
         }
         uint256 rnd = uint(keccak256(abi.encodePacked(block.timestamp, msg.sender))) % sum_of_weights;
+        uint256 rnd = randomSeed % sum_of_weights;
         for (uint8 i = 0; i < _weights.length; i++) {
             if (rnd < _weights[i]) {
                 return i;
@@ -709,12 +738,12 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         uint256 value,
         bytes calldata data
     )
-    external
-    override
-    returns(bytes4)
+        external
+        override
+        returns(bytes4)
     {
-        return bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"));
-    }
+        return bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"));  
+    }    
 
     /**
         @dev Handles the receipt of a multiple ERC1155 token types. This function
@@ -736,11 +765,11 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
         uint256[] calldata values,
         bytes calldata data
     )
-    external
-    override
-    returns(bytes4)
+        external
+        override
+        returns(bytes4)
     {
-        return bytes4(keccak256("onERC1155BatchReceived(address,address,uint256,uint256,bytes)"));
+        return bytes4(keccak256("onERC1155BatchReceived(address,address,uint256,uint256,bytes)"));  
     }
 
     function getCreatureTypeCount() virtual internal view returns (uint16);
@@ -749,4 +778,13 @@ abstract contract DegenFarmBase is Eggs, ERC1155Receiver {
 
     function getToolUnstakeDelay() virtual internal view returns (uint);
 
+    function getNormieCountInType() virtual internal view returns (uint16);
+
+    function getChadCountInType() virtual internal view returns (uint16);
+
+    function getMaxLands() virtual internal view returns (uint16);
+
+    function getUsersTokens(address _owner) external view returns (uint256[] memory) {
+        return eggs.getUsersTokens(_owner);
+    }
 }
