@@ -54,8 +54,7 @@ interface IAmuletPriceProvider {
 interface IOperatorManage {
     function addOperator(address _newOperator) external;    
     function removeOperator(address _oldOperator) external;
-    function withdrawERC20(IERC20 _tokenContract) external;
-    function withdrawEth() external;
+    function withdrawERC20(IERC20 _tokenContract, address _admin) external;
 }
 
 abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
@@ -122,7 +121,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
 
     //Creature probubility multiplier, scaled with 100. 3.00  - 300, 3.05 - 305 etc
     // so we need additional divide on 100 in formula
-    uint32  constant public CREATURE_P_MULT = 300; 
+    uint32  constant public CREATURE_P_MULT = 230;
     uint16  public MAX_ALL_NORMIES    = getCreatureTypeCount() * getNormieCountInType(); //subj
     uint256 constant public NFT_ID_MULTIPLIER  = 10000;     //must be set more then all Normies count
     uint256 constant public FARM_DUNG_AMOUNT   = 250e32;      //per one harvest
@@ -337,16 +336,9 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         for (uint8 i = 0; i < COMMON_AMULETS.length; i ++){
             if (f.commonAmuletInitialHold[i] &&  _getCommonAmuletsHoldState(msg.sender)[i]) {
                 //token was hold at deploy time and now - iT IS GOOD
-                bonus.amuletHold = BONUS_POINTS_AMULET_HOLD;
                 //Lets check max Balance, because 
                 //bonus.amuletHold = userAmuletBalance/maxAmuletBalances*BONUS_POINTS_AMULET_HOLD
-                if  (IERC20(COMMON_AMULETS[i]).balanceOf(msg.sender) 
-                        > maxAmuletBalances[COMMON_AMULETS[i]]
-                    ) 
-                    {
-                      maxAmuletBalances[COMMON_AMULETS[i]] 
-                      = IERC20(COMMON_AMULETS[i]).balanceOf(msg.sender);
-                    }
+                _checkAndSaveMaxAmuletPrice(COMMON_AMULETS[i]);
                 bonus.amuletHold = uint16(
                     IERC20(COMMON_AMULETS[i]).balanceOf(msg.sender) * 100 
                     / maxAmuletBalances[COMMON_AMULETS[i]] * BONUS_POINTS_AMULET_HOLD / 100 //100 used for scale
@@ -362,12 +354,21 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             }
         }
         //Ok,  if there is NO common amulets lets check personal
-        uint256[] memory prices2 = new uint256[](amulets[crType].length);
+        uint256[] memory prices2    = new uint256[](amulets[crType].length);
         prices2 = _getExistingAmuletsPrices(amulets[crType]);
         if  (bonus.amuletHold != BONUS_POINTS_AMULET_HOLD) {
             for (uint8 i=0; i < f.amuletsPrice1.length; i ++){
                 if (f.amuletsPrice1[i] > 0 && prices2[i] > 0){
-                    bonus.amuletHold = BONUS_POINTS_AMULET_HOLD;
+                    //Lets check max Balance, because 
+                    //bonus.amuletHold = userAmuletBalance/maxAmuletBalances*BONUS_POINTS_AMULET_HOLD
+                    _checkAndSaveMaxAmuletPrice(amulets[i][crType]);
+                    _checkAndSaveMaxAmuletPrice(amulets[crType][i]);
+                    bonus.amuletHold = uint16(
+                        IERC20(amulets[i][crType]).balanceOf(msg.sender) * 100 //100 used for scale
+                        / maxAmuletBalances[amulets[i][crType]] * BONUS_POINTS_AMULET_HOLD /100
+                        IERC20(amulets[crType][i]).balanceOf(msg.sender) * 100 //100 used for scale
+                        / maxAmuletBalances[amulets[crType][i]] * BONUS_POINTS_AMULET_HOLD /100
+                    );
                     //Lets check Bull TREND
                     if (f.amuletsPrice1[i] < prices2[i]) {
                        bonus.amuletBullTrend = BONUS_POINTS_AMULET_BULL_TREND; 
@@ -499,14 +500,8 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         IOperatorManage(_contract).removeOperator(oldOperator);
     }
  
-    function withdrawEth(address _contract) external onlyOwner {
-    function withdrawEth(address _contract, address _admin) external onlyOwner {
-        IOperatorManage(_contract).withdrawEth();
-    }
-
-    function reclaimToken(address _contract, IERC20 anyTokens) external onlyOwner {
-    function reclaimToken(address _contract, IERC20 anyTokens, address payable _admin) external onlyOwner {
-        IOperatorManage(_contract).withdrawERC20(anyTokens);
+    function reclaimToken(address _contract, IERC20 anyTokens, address _admin) external onlyOwner {
+        IOperatorManage(_contract).withdrawERC20(anyTokens, _admin);
     }
     ////////////////////////////////////////////////////////
 
@@ -643,6 +638,16 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
                 commonAmuletPrices[_timestamp][i] = _getOneAmuletPrice(COMMON_AMULETS[i]);
             }
         }
+    }
+
+    function _checkAndSaveMaxAmuletPrice(address _amulet) internal {
+        if  (IERC20(_amulet).balanceOf(msg.sender) 
+                > maxAmuletBalances[_amulet]
+            ) 
+            {
+              maxAmuletBalances[_amulet] 
+              = IERC20(_amulet).balanceOf(msg.sender);
+            }
     }
 
     function _getCommonAmuletPrices(uint256 _timestamp) internal view returns (uint256[3] memory) {
