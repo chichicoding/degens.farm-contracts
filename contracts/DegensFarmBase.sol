@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Degen Farm. Collectible NFT game
+// Degen'$ Farm: Collectible NFT game (https://degens.farm)
 pragma solidity ^0.7.4;
 pragma experimental ABIEncoderV2;
 
@@ -63,7 +63,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         Snake, Fish, Frog, Worm, Lama, Mouse, Camel, Donkey, Bee, Duck,
         GenesisEgg // 20
     }
-    enum Rarity     {
+    enum Rarity {
         Normie, // 0
         Chad,   // 1
         Degen,  // 2
@@ -71,7 +71,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     }
     enum   Result     {Fail,   Dung,  Chad, Degen}
     
-    //External conatrct addresses used with this farm.
+    // External contract addresses used with this farm
     struct AddressRegistry {
         address land;
         address creatures;
@@ -103,8 +103,8 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         uint256   creatureId;
         uint256   landId;
         uint256   harvestTime;
-        uint256[] amuletsPrice1;
-        uint256[] amuletsPrice2;
+        uint256 amuletsPrice1;
+        uint256 amuletsPrice2;
         Result    harvest;
         uint256   harvestId; //new NFT tokenId
         bool[3]   commonAmuletInitialHold;
@@ -112,9 +112,10 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
 
     // Bonus for better harvest
     struct Bonus {
-        uint16 amuletHold;
-        uint16 amuletBullTrend;
-        uint16 inventoryHold;
+        uint256 commonAmuletHold;  //common amulet hold
+        uint256 creatureAmuletBullTrend;
+        uint256 inventoryHold;
+        uint256 creatureAmuletBalance;
     }
 
     uint8   constant public CREATURE_TYPE_COUNT_MAX = 20;  //how much creatures types may be used
@@ -125,8 +126,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     uint16  public MAX_ALL_NORMIES    = getCreatureTypeCount() * getNormieCountInType(); //subj
     uint256 constant public NFT_ID_MULTIPLIER  = 10000;     //must be set more then all Normies count
     uint256 constant public FARM_DUNG_AMOUNT   = 250e32;      //per one harvest
-    uint16  constant public BONUS_POINTS_AMULET_HOLD       = 10;
-    uint16  constant public BONUS_POINTS_AMULET_BULL_TREND = 90;
+    uint256 constant public BONUS_POINTS_AMULET_HOLD       = 10;
     
     //Common Amulet addresses
     address[3] public COMMON_AMULETS = [
@@ -138,9 +138,9 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     bool    public REVEAL_ENABLED  = false;
     bool    public FARMING_ENABLED = false;
     address public priceProvider;
-    IEggs    public eggs;
+    IEggs   public eggs;
     
-    address[][CREATURE_TYPE_COUNT_MAX] public amulets; //amulets for creatures
+    address[CREATURE_TYPE_COUNT_MAX] public amulets; //amulets for creatures
     AddressRegistry                    public farm;
     LandCount                          public landCount;
 
@@ -158,15 +158,16 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     CreaturesCount[CREATURE_TYPE_COUNT_MAX] public creaturesBorn;
     FarmRecord[]       farming;
 
-    event Reveal(uint256 indexed _tokenId, bool _isCreature, uint8 _animalType);
+    event Reveal(address _farmer, uint256 indexed _tokenId, bool _isCreature, uint8 _animalType);
     event Harvest(
         uint256 indexed _eggId, 
         address farmer, 
         uint8   result ,
-        uint16  baseChance, 
-        uint16  amuletHold,
-        uint16  amuletBullTrend,
-        uint16  inventoryHold
+        uint256  baseChance, 
+        uint256  commonAmuletHold,
+        uint256  amuletBullTrend,
+        uint256  inventoryHold,
+        uint256  amuletMaxBalance
     );
     
     constructor (
@@ -229,7 +230,6 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         }
     }
 
-    event Log(string mess);
     /**
      * @dev Start farming process. New NFT - Egg will minted for user 
      * @param _creatureId - NFT tokenId, caller must be owner of this token
@@ -253,21 +253,18 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         } else {
             require(creaturesBorn[crType].leftDegenToDiscover > 0, "No more Degen left");
         }
-        //1. Lets make amulet price snapshot
-        //1.1. First we need creat array with properly elements count
-        uint256[] memory prices1  = new uint256[](amulets[crType].length);
-        uint256[] memory prices2  = new uint256[](amulets[crType].length);
-        prices1 = _getExistingAmuletsPrices(amulets[crType]);
-        //2.Check and save Common Amulets price(if not exist yet)
+
+        //1.Check and save Common Amulets price(if not exist yet)
         _saveCommonAmuletPrices(block.timestamp);
-        //3. Save deploy record
+        
+        //2. Save deploy record
         farming.push(
             FarmRecord({
                 creatureId:    _creatureId,
                 landId:        _landId,
                 harvestTime:   block.timestamp + getFarmingDuration(),
-                amuletsPrice1: prices1,
-                amuletsPrice2: prices2,
+                amuletsPrice1: _getExistingAmuletsPrices(amulets[crType]),
+                amuletsPrice2: 0,
                 harvest:       Result.Fail,
                 harvestId:     0, 
                 commonAmuletInitialHold: _getCommonAmuletsHoldState(msg.sender) //save initial hold state
@@ -301,7 +298,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         (uint8 crType, uint8 crRarity) = ICreatures(farm.creatures).getTypeAndRarity(
             f.creatureId
         );
-        uint16 baseChance;
+        uint256 baseChance;
         if  (crRarity == 0) {
             //Try farm CHAD. So if there is no CHADs any more we must return assets
             if  (creaturesBorn[crType].leftChadToDiscover == 0) {
@@ -325,63 +322,40 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             creaturesBorn[crType].leftDegenFarmAttempts -= 1;
         }
         //////////////////////////////////////////////
-        //   2. Bonus for amulet token ***HOLD***
-        //   3. Bonus for amulets BULLs trend
+        //   2. Bonus for common amulet token ***HOLD*** - commonAmuletHold
         //////////////////////////////////////////////
-        bonus.amuletHold      = 0;
-        bonus.amuletBullTrend = 0;
+  
         //Check common amulets
         _saveCommonAmuletPrices(block.timestamp);
         //Get current hold stae
         for (uint8 i = 0; i < COMMON_AMULETS.length; i ++){
             if (f.commonAmuletInitialHold[i] &&  _getCommonAmuletsHoldState(msg.sender)[i]) {
-                //token was hold at deploy time and now - iT IS GOOD
-                //Lets check max Balance, because 
-                //bonus.amuletHold = userAmuletBalance/maxAmuletBalances*BONUS_POINTS_AMULET_HOLD
-                _checkAndSaveMaxAmuletPrice(COMMON_AMULETS[i]);
-                bonus.amuletHold = uint16(
-                    IERC20(COMMON_AMULETS[i]).balanceOf(msg.sender) * 100 
-                    / maxAmuletBalances[COMMON_AMULETS[i]] * BONUS_POINTS_AMULET_HOLD / 100 //100 used for scale
-                );     
-                //Lets check Bull TREND
-                if  (_getCommonAmuletPrices(f.harvestTime - getFarmingDuration())[i]
-                        <  _getCommonAmuletPrices(block.timestamp)[i]
-                    ) 
-                    {
-                       bonus.amuletBullTrend = BONUS_POINTS_AMULET_BULL_TREND; 
-                    }
-                break;
+                bonus.commonAmuletHold = BONUS_POINTS_AMULET_HOLD;
             }
         }
-        //Ok,  if there is NO common amulets lets check personal
-        uint256[] memory prices2    = new uint256[](amulets[crType].length);
+        //////////////////////////////////////////////
+        //   3. Bonus for creatures amulets BULLs trend  - creatureAmuletBullTrend
+        //   4. Bonus for creatures amulets balance      - creatureAmuletBalance
+        //////////////////////////////////////////////
+        uint256 prices2 = 0;
         prices2 = _getExistingAmuletsPrices(amulets[crType]);
-        if  (bonus.amuletHold != BONUS_POINTS_AMULET_HOLD) {
-            for (uint8 i=0; i < f.amuletsPrice1.length; i ++){
-                if (f.amuletsPrice1[i] > 0 && prices2[i] > 0){
-                    //Lets check max Balance, because 
-                    //bonus.amuletHold = userAmuletBalance/maxAmuletBalances*BONUS_POINTS_AMULET_HOLD
-                    _checkAndSaveMaxAmuletPrice(amulets[i][crType]);
-                    _checkAndSaveMaxAmuletPrice(amulets[crType][i]);
-                    bonus.amuletHold = uint16(
-                        IERC20(amulets[i][crType]).balanceOf(msg.sender) * 100 //100 used for scale
-                        / maxAmuletBalances[amulets[i][crType]] * BONUS_POINTS_AMULET_HOLD /100
-                        IERC20(amulets[crType][i]).balanceOf(msg.sender) * 100 //100 used for scale
-                        / maxAmuletBalances[amulets[crType][i]] * BONUS_POINTS_AMULET_HOLD /100
-                    );
-                    //Lets check Bull TREND
-                    if (f.amuletsPrice1[i] < prices2[i]) {
-                       bonus.amuletBullTrend = BONUS_POINTS_AMULET_BULL_TREND; 
-                    }
-                    break;
-                }
+            if (f.amuletsPrice1 > 0 && prices2 > 0 && prices2 > f.amuletsPrice1){
+                bonus.creatureAmuletBullTrend = 
+                    (prices2 - f.amuletsPrice1) * 100 / f.amuletsPrice1;
+            }        
+            //Lets check max Balance, because 
+            //bonus.amuletHold = userAmuletBalance/maxAmuletBalances*BONUS_POINTS_AMULET_HOLD
+            _checkAndSaveMaxAmuletPrice(amulets[crType]);
+            if (maxAmuletBalances[amulets[crType]] > 0) {
+                bonus.creatureAmuletBalance = 
+                    IERC20(amulets[crType]).balanceOf(msg.sender) * 100 //100 used for scale
+                    / maxAmuletBalances[amulets[crType]] * BONUS_POINTS_AMULET_HOLD /100;
             }
-        }
         //////////////////////////////////////////////
 
 
         ////////////////////////////////////////////// 
-        //4. Bonus for inventory 
+        //5. Bonus for inventory 
         //////////////////////////////////////////////
         bonus.inventoryHold = 0;
         if (userStakedTools[msg.sender].length > 0) { 
@@ -394,8 +368,9 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         }  
         //////////////////////////////////////////////
 
-        uint16 allBonus = bonus.amuletHold 
-            + bonus.amuletBullTrend 
+        uint256 allBonus = bonus.commonAmuletHold 
+            + bonus.creatureAmuletBullTrend 
+            + bonus.creatureAmuletBalance
             + bonus.inventoryHold;
         uint8 chanceOfRarityUP = uint8(
             (baseChance + allBonus) * 100 / (100 + allBonus)
@@ -403,9 +378,9 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         uint8[] memory choiceWeight = new uint8[](2); 
         choiceWeight[0] = chanceOfRarityUP; 
         choiceWeight[1] = 100 - chanceOfRarityUP;
-        uint8 choice = uint8(_getWeightedChoice(choiceWeight));
+        //uint8 choice = uint8(_getWeightedChoice(choiceWeight));
 
-        if (choice == 0) {
+        if (_getWeightedChoice(choiceWeight) == 0) {
             f.harvestId = (crRarity + 1) * NFT_ID_MULTIPLIER + _deployId;
             // Mint new chad/degen
 
@@ -442,9 +417,10 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             msg.sender, 
             uint8(farmingResult),
             baseChance,
-            bonus.amuletHold,
-            bonus.amuletBullTrend,
-            bonus.inventoryHold 
+            bonus.commonAmuletHold,
+            bonus.creatureAmuletBullTrend,
+            bonus.inventoryHold,
+            bonus.creatureAmuletBalance 
         );
     }
 
@@ -472,9 +448,9 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         COMMON_AMULETS[_index] = _token;
     }
 
-    function setAmuletForOneCreature(uint8 _index, address[] memory _tokens) external onlyOwner {
+    function setAmuletForOneCreature(uint8 _index, address _token) external onlyOwner {
         delete amulets[_index];
-        amulets[_index] = _tokens;
+        amulets[_index] = _token;
     }
 
     function setPriceProvider(address _priceProvider) external onlyOwner {
@@ -492,7 +468,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     ////////////////////////////////////////
     /// Proxy for NFT Operators mamnage   //
     ////////////////////////////////////////
-    function  addOperator(address _contract, address newOperator) external onlyOwner {
+    function addOperator(address _contract, address newOperator) external onlyOwner {
         IOperatorManage(_contract).addOperator(newOperator);
     }
 
@@ -505,11 +481,11 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     }
     ////////////////////////////////////////////////////////
 
-    function getCreatureAmulets(uint8 _creatureType) external view returns (address[] memory) {
+    function getCreatureAmulets(uint8 _creatureType) external view returns (address) {
         return _getCreatureAmulets(_creatureType);
     }
 
-    function _getCreatureAmulets(uint8 _creatureType) internal view returns (address[] memory) {
+    function _getCreatureAmulets(uint8 _creatureType) internal view returns (address) {
         return amulets[_creatureType];
     } 
 
@@ -587,9 +563,10 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
                 msg.sender, 
                 uint8(_res),
                 0, //baseChance
-                0, //bonus.amuletHold,
-                0, //bonus.amuletBullTrend,
-                0  //bonus.inventoryHold 
+                0, //bonus.commonAmuletHold
+                0, //bonus.creatureAmuletBullTrend,
+                0, //bonus.inventoryHold 
+                0  // bonus.creatureAmuletBalance
             );   
         }
     }
@@ -678,21 +655,17 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         return res;
     }
 
-    function _getExistingAmuletsPrices(address[] memory _tokens) 
+    function _getExistingAmuletsPrices(address _token) 
         internal 
         view 
-        returns (uint256[] memory) 
+        returns (uint256) 
     {
-        uint256[] memory res = new uint256[](_tokens.length);
-        for (uint8 i=0; i < _tokens.length; i++){
-            if  (IERC20(_tokens[i]).balanceOf(msg.sender) > 0){
-                res[i] = _getOneAmuletPrice(_tokens[i]);    
-            } else {
-            // Set to zero if token balance is 0   
-                res[i] = 0;
-            }    
-        }
-        return res;
+        if  (IERC20(_token).balanceOf(msg.sender) > 0){
+            return _getOneAmuletPrice(_token);    
+        } else {
+        // Set to zero if token balance is 0   
+            return 0;
+        }    
     }
 
     function _getOneAmuletPrice(address _token) internal view returns (uint256) {
@@ -735,7 +708,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
                 0,
                 creaturesBorn[choice].totalNormie - creaturesBorn[choice].leftNormie + 1 // index
             );
-            emit Reveal(MAX_ALL_NORMIES - allNormiesesLeft, true, choice);
+            emit Reveal(msg.sender, MAX_ALL_NORMIES - allNormiesesLeft, true, choice);
             allNormiesesLeft -= 1;
             creaturesBorn[choice].leftNormie -= 1;
         } else { // create land
@@ -743,7 +716,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
                 msg.sender, 
                 getMaxLands() - landCount.left
             );
-            emit Reveal(getMaxLands() - landCount.left , false, 0);
+            emit Reveal(msg.sender, getMaxLands() - landCount.left , false, 0);
             landCount.left -= 1; 
         }
     }
