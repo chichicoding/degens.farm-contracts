@@ -15,7 +15,6 @@ interface IEggs is IERC721 {
     function getUsersTokens(address _owner) external view returns (uint256[] memory);
 }
 
-
 interface ICreatures is IERC721 {
     function mint(
         address to, 
@@ -26,12 +25,14 @@ interface ICreatures is IERC721 {
         ) external;
 
     function getTypeAndRarity(uint256 _tokenId) external view returns(uint8, uint8);
+    function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256);
 }
 
 interface ILand is IERC721 {
     function mint(
         address to, 
-        uint256 tokenId
+        uint256 tokenId,
+        uint randomSeed
     ) external;
     function burn(uint256 tokenId) external;
 }
@@ -80,7 +81,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         address dungtoken;
     }
 
-    //Degens Farm Key numbers
+    // Degens Farm data for creature type
     struct CreaturesCount {
         uint16 totalNormie;
         uint16 leftNormie;
@@ -88,11 +89,11 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         uint16 leftChadToDiscover;
         uint16 totalDegen;
         uint16 leftDegenToDiscover;
-        uint16 leftChadFarmAttempts;
-        uint16 leftDegenFarmAttempts;
+        uint16 chadFarmAttempts;
+        uint16 degenFarmAttempts;
     }
 
-    //Land count record
+    // Land count record
     struct LandCount {
         uint16 total;
         uint16 left;
@@ -120,19 +121,19 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
 
     uint8   constant public CREATURE_TYPE_COUNT_MAX = 20;  //how much creatures types may be used
 
-    // Creature probubility multiplier, scaled with 100. 3.00  - 300, 3.05 - 305 etc
-    // so we need additional divide on 100 in formula
+    // Creature probability multiplier, scaled with 100. 3.00  - 300, 3.05 - 305 etc
     uint32  constant public CREATURE_P_MULT = 230;
     uint16  public MAX_ALL_NORMIES    = getCreatureTypeCount() * getNormieCountInType();
     uint256 constant public NFT_ID_MULTIPLIER  = 10000;     //must be set more then all Normies count
     uint256 constant public FARM_DUNG_AMOUNT   = 250e33;      //per one harvest
     uint256 constant public BONUS_POINTS_AMULET_HOLD       = 10;
     uint256 constant public COMMON_AMULET_COUNT       = 2;
+    uint256 constant public TOOL_TYPE_COUNT = 6;
 
-    //Common Amulet addresses
+    // Common Amulet addresses
     address[COMMON_AMULET_COUNT] public COMMON_AMULETS = [
-        0xa0246c9032bC3A600820415aE600c6388619A14D, // $DEGEN token
-        0xa0246c9032bC3A600820415aE600c6388619A14D // $FARM token
+        0x126c121f99e1E211dF2e5f8De2d96Fa36647c855, // $DEGEN token
+        0xa0246c9032bC3A600820415aE600c6388619A14D  // $FARM token
     ];
 
     bool    public REVEAL_ENABLED  = false;
@@ -140,18 +141,18 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     address public priceProvider;
     IEggs   public eggs;
     
-    address[CREATURE_TYPE_COUNT_MAX] public amulets; //amulets for creatures
+    address[CREATURE_TYPE_COUNT_MAX] public amulets; // amulets by creature type
     AddressRegistry                  public farm;
     LandCount                        public landCount;
 
-    //common token price snapshots
-    mapping(uint256 => uint256[3]) public commonAmuletPrices; 
+    // common token price snapshots
+    mapping(uint256 => uint256[COMMON_AMULET_COUNT]) public commonAmuletPrices;
 
     mapping(address => uint256) public maxAmuletBalances;
 
     // mapping from user to his(her) staked tools
-    // Index of uint256[6] represent tool NFT  itemID
-    mapping(address => uint256[6]) public userStakedTools;
+    // Index of uint256[6] represent tool NFT itemID
+    mapping(address => uint256[TOOL_TYPE_COUNT]) public userStakedTools;
 
 
     uint16 public allNormiesesLeft;
@@ -198,8 +199,8 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
                 getChadCountInType(),   // leftChadToDiscover;
                 1,                      // totalDegen;
                 1,                      // leftDegenToDiscover;
-                getNormieCountInType(), // leftChadFarmAttempts;
-                getChadCountInType());  // leftDegenFarmAttempts;
+                0, // chadFarmAttempts;
+                0);  // degenFarmAttempts;
         }
 
         landCount        = LandCount(getMaxLands(), getMaxLands());
@@ -250,17 +251,17 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         require((DegenFarmBase.Rarity)(crRarity) == Rarity.Normie ||
             (DegenFarmBase.Rarity)(crRarity) == Rarity.Chad,
             "Can farm only Normie and Chad");
-        //Check that farming available yet
+        // Check that farming available yet
         if (crRarity == 0) {
             require(creaturesBorn[crType].leftChadToDiscover > 0, "No more chads left");
         } else {
             require(creaturesBorn[crType].leftDegenToDiscover > 0, "No more Degen left");
         }
 
-        //1.Check and save Common Amulets price(if not exist yet)
+        // 1.Check and save Common Amulets price (if not exist yet)
         _saveCommonAmuletPrices(block.timestamp);
         
-        //2. Save deploy record
+        // 2. Save deploy record
         farming.push(
             FarmRecord({
                 creatureId:    _creatureId,
@@ -274,12 +275,12 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             })
         );
 
-        // Let's  mint Egg.
+        // Let's mint Egg.
         eggs.mint(
             msg.sender,         // farmer
             farming.length - 1  // tokenId
         );
-        //STAKE LAND  and Creatures!!!!
+        // STAKE LAND and Creatures
         ILand(farm.land).transferFrom(msg.sender, address(this), _landId);
         ICreatures(farm.creatures).transferFrom(msg.sender, address(this), _creatureId);
     }
@@ -294,42 +295,40 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         
         FarmRecord storage f = farming[_deployId];
         require(f.harvestTime <= block.timestamp, "To early for harvest");
-        //Lets Calculate Dung/CHAD-DEGEN chance
+        // Lets Calculate Dung/CHAD-DEGEN chance
         Result farmingResult;
         Bonus memory bonus;
-        //1. BaseChance
+        // 1. BaseChance
         (uint8 crType, uint8 crRarity) = ICreatures(farm.creatures).getTypeAndRarity(
             f.creatureId
         );
         uint256 baseChance;
         if (crRarity == 0) {
-            //Try farm CHAD. So if there is no CHADs any more we must return assets
-            if  (creaturesBorn[crType].leftChadToDiscover == 0) {
+            // Try farm CHAD. So if there is no CHADs any more we must return assets
+            if (creaturesBorn[crType].leftChadToDiscover == 0) {
                 _endFarming(_deployId, Result.Fail);
                 return;
             }
-            baseChance = creaturesBorn[crType].leftChadToDiscover * 100
-                /(creaturesBorn[crType].leftChadFarmAttempts);
-            //Decrease appropriate farm ATTEMPTS COUNT!!!
-            creaturesBorn[crType].leftChadFarmAttempts -= 1;
+            baseChance = 100 * creaturesBorn[crType].totalChad / creaturesBorn[crType].totalNormie; // by default 20%
+            // Decrease appropriate farm ATTEMPTS COUNT
+            creaturesBorn[crType].chadFarmAttempts += 1;
         } else {
-            //Try farm DEGEN. So if there is no DEGENSs any more we must return assets
-            if  (creaturesBorn[crType].leftDegenToDiscover == 0) {
+            // Try farm DEGEN. So if there is no DEGENSs any more we must return assets
+            if (creaturesBorn[crType].leftDegenToDiscover == 0) {
                 _endFarming(_deployId, Result.Fail);
                 return;
             }
-            baseChance = creaturesBorn[crType].leftDegenToDiscover * 100
-                /(creaturesBorn[crType].leftDegenFarmAttempts);
-            //Decrease appropriate farm ATTEMPTS COUNT!!!
-            creaturesBorn[crType].leftDegenFarmAttempts -= 1;
+            baseChance = 100 * creaturesBorn[crType].totalDegen / creaturesBorn[crType].totalChad; // by default 5%
+            // Decrease appropriate farm ATTEMPTS COUNT
+            creaturesBorn[crType].degenFarmAttempts += 1;
         }
         //////////////////////////////////////////////
         //   2. Bonus for common amulet token ***HOLD*** - commonAmuletHold
         //////////////////////////////////////////////
   
-        //Check common amulets
+        // Check common amulets
         _saveCommonAmuletPrices(block.timestamp);
-        //Get current hold stae
+        // Get current hold stae
         for (uint8 i = 0; i < COMMON_AMULETS.length; i ++){
             if (f.commonAmuletInitialHold[i] &&  _getCommonAmuletsHoldState(msg.sender)[i]) {
                 bonus.commonAmuletHold = BONUS_POINTS_AMULET_HOLD;
@@ -354,8 +353,6 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
                 / maxAmuletBalances[amulets[crType]] * BONUS_POINTS_AMULET_HOLD /100;
         }
         f.amuletsPrice2 = prices2;    
-        //////////////////////////////////////////////
-
 
         ////////////////////////////////////////////// 
         //5. Bonus for inventory 
@@ -375,6 +372,11 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             + bonus.creatureAmuletBullTrend 
             + bonus.creatureAmuletBalance
             + bonus.inventoryHold;
+
+        if (allBonus > 100) {
+            allBonus = 100; // limit bonus to 100%
+        }
+
         uint32[] memory choiceWeight = new uint32[](2);
         choiceWeight[0] = uint32(baseChance + allBonus); // chanceOfRarityUP: (baseChance + allBonus) / (100 + allBonus)
         choiceWeight[1] = uint32(100 - baseChance); // else: (100 - baseChance + allBonus) / (100 + allBonus)
@@ -384,7 +386,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             // Mint new chad/degen
 
             uint32 index;
-            //Decrease appropriate CREATRURE COUNT
+            // Decrease appropriate CREATURE COUNT
             if (crRarity + 1 == uint8(Rarity.Chad)) {
                 index = creaturesBorn[crType].totalChad - creaturesBorn[crType].leftChadToDiscover + 1;
                 creaturesBorn[crType].leftChadToDiscover -= 1;
@@ -432,14 +434,12 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     function stakeOneTool(uint8 _itemId) external {
         _stakeOneTool(_itemId);
          emit Stake(msg.sender, _itemId);
-    
     }
 
     /**
      * @dev UnStake one inventory item 
      * @param _itemId - NFT tokenId
      */
-
     function unstakeOneTool(uint8 _itemId) external {
         _unstakeOneTool(_itemId);
         emit UnStake(msg.sender, _itemId);
@@ -515,8 +515,8 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             stat.leftChadToDiscover, 
             stat.totalDegen, 
             stat.leftDegenToDiscover,
-            stat.leftChadFarmAttempts,
-            stat.leftDegenFarmAttempts
+            stat.chadFarmAttempts,
+            stat.degenFarmAttempts
         );
     }
 
@@ -533,7 +533,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         return farming[_farmingId];
     }
 
-    function getCommonAmuletPrices(uint256 _timestamp) external view returns (uint256[3] memory) {
+    function getCommonAmuletPrices(uint256 _timestamp) external view returns (uint256[COMMON_AMULET_COUNT] memory) {
         return _getCommonAmuletPrices(_timestamp);
     }
 
@@ -550,7 +550,6 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
      * appropriate token (NFT, ERC20 or None)
     */
     function _endFarming(uint256 _deployId, Result  _res) internal {
-        //TODO need refactor if EGGs will be
         FarmRecord storage f = farming[_deployId];
         f.harvest = _res;
         // unstake creature
@@ -579,12 +578,12 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         require(IInventory(farm.inventory).balanceOf(msg.sender, _itemId) >= 1,
             "You must own this tool for stake!"
         );
-        //Before stake  we need two checks.
-        //1. Removed
-        //2. Cant`t stake one tool more than one item
+        // Before stake  we need two checks.
+        // 1. Removed
+        // 2. Cant`t stake one tool more than one item
         require(userStakedTools[msg.sender][_itemId] == 0, "Tool is already staked");
 
-        //stake
+        // stake
         IInventory(farm.inventory).safeTransferFrom(
             msg.sender, 
             address(this), 
@@ -593,7 +592,6 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             bytes('0')
         );
         userStakedTools[msg.sender][_itemId] = block.timestamp;
-
     }
 
     function _unstakeOneTool(uint8 _itemId) internal {
@@ -613,7 +611,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
     }
 
     function _saveCommonAmuletPrices(uint256 _timestamp) internal {
-        //Lets check if price NOT exist for this timestamp - lets save it
+        // Lets check if price NOT exist for this timestamp - lets save it
         if  (commonAmuletPrices[_timestamp][0] == 0) {
             for (uint8 i=0; i < COMMON_AMULETS.length; i++){
                 commonAmuletPrices[_timestamp][i] = _getOneAmuletPrice(COMMON_AMULETS[i]);
@@ -631,13 +629,13 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             }
     }
 
-    function _getCommonAmuletPrices(uint256 _timestamp) internal view returns (uint256[3] memory) {
-        //Lets check if price allready exist for this timestamp - just return it
+    function _getCommonAmuletPrices(uint256 _timestamp) internal view returns (uint256[COMMON_AMULET_COUNT] memory) {
+        // Lets check if price allready exist for this timestamp - just return it
         if  (commonAmuletPrices[_timestamp][0] != 0) {
             return commonAmuletPrices[_timestamp];
         }
-        //If price is not exist lets get it from oracles
-        uint256[3] memory res;
+        // If price is not exist lets get it from oracles
+        uint256[COMMON_AMULET_COUNT] memory res;
         for (uint8 i=0; i < COMMON_AMULETS.length; i++){
             res[i] = _getOneAmuletPrice(COMMON_AMULETS[i]);
         }
@@ -646,7 +644,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
 
     function _getCommonAmuletsHoldState(address _farmer) internal view returns (bool[COMMON_AMULET_COUNT] memory) {
         
-        //If token balance =0 - set false
+        // If token balance =0 - set false
         bool[COMMON_AMULET_COUNT] memory res;
         for (uint8 i = 0; i < COMMON_AMULETS.length; i++){
             if (IERC20(COMMON_AMULETS[i]).balanceOf(_farmer) > 0){
@@ -689,6 +687,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         choiceWeight[0] = uint32(allNormiesesLeft) * CREATURE_P_MULT;
         choiceWeight[1] = uint32(landCount.left) * 100;
         uint8 choice = uint8(_getWeightedChoice2(choiceWeight, randomSeed));
+        randomSeed /= 0x10000; // shift right 16 bits
         //Check that choice can be executed
         if (choice != 0 && landCount.left == 0) {
             //There are no more Lands. So we need change choice
@@ -701,7 +700,7 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
             for (uint8 i = 0; i < getCreatureTypeCount(); i ++) {
                 choiceWeight0[i] = uint32(creaturesBorn[i].leftNormie);
             }
-            choice = uint8(_getWeightedChoice2(choiceWeight0, randomSeed / 0x10000)); // shift right 16 bits
+            choice = uint8(_getWeightedChoice2(choiceWeight0, randomSeed));
             ICreatures(farm.creatures).mint(
                 msg.sender, 
                 MAX_ALL_NORMIES - allNormiesesLeft,
@@ -715,7 +714,8 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
         } else { // create land
             ILand(farm.land).mint(
                 msg.sender, 
-                getMaxLands() - landCount.left
+                getMaxLands() - landCount.left,
+                randomSeed
             );
             emit Reveal(msg.sender, getMaxLands() - landCount.left , false, 0);
             landCount.left -= 1; 
@@ -724,15 +724,15 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
 
     function _getWeightedChoice2(uint32[] memory _weights, uint randomSeed) internal view returns (uint8){
         uint256 sum_of_weights;
-        for (uint8 i = 0; i < _weights.length; i++) {
-            sum_of_weights += _weights[i];
+        for (uint8 index = 0; index < _weights.length; index++) {
+            sum_of_weights += _weights[index];
         }
         uint256 rnd = randomSeed % sum_of_weights;
-        for (uint8 i = 0; i < _weights.length; i++) {
-            if (rnd < _weights[i]) {
-                return i;
+        for (uint8 kindex = 0; kindex < _weights.length; kindex++) {
+            if (rnd < _weights[kindex]) {
+                return kindex;
             }
-            rnd -= _weights[i];
+            rnd -= _weights[kindex];
         }
         return 0;
     }
@@ -805,5 +805,43 @@ abstract contract DegenFarmBase is ERC1155Receiver, Ownable {
 
     function getUsersTokens(address _owner) external view returns (uint256[] memory) {
         return eggs.getUsersTokens(_owner);
+    }
+
+    /**
+     * @dev Returns creatures owned by owner and that can be used for farming.this
+     * Some creatures types and rarity are limited to farm because all chad/degens
+     * was already discovered.
+     * @param _owner - creatures owner
+     */
+    function getFarmingAllowedCreatures(address _owner) external view returns (uint256[] memory) {
+        uint256 n = ICreatures(farm.creatures).balanceOf(_owner);
+
+        uint256[] memory result = new uint256[](n);
+        uint256 count = 0;
+
+        for (uint16 i = 0; i < n; i++) {
+            uint creatureId = ICreatures(farm.creatures).tokenOfOwnerByIndex(_owner, i);
+            if (isFarmingAllowedForCreature(creatureId)) {
+                result[count] = creatureId;
+                count++;
+            }
+        }
+        uint256[] memory result2 = new uint256[](count);
+        for (uint16 i = 0; i < count; i++) {
+            result2[i] = result[i];
+        }
+        return result2;
+    }
+
+    function isFarmingAllowedForCreature(uint creatureId) public view returns (bool) {
+        (uint8 _type, uint8 rarity) = ICreatures(farm.creatures).getTypeAndRarity(creatureId);
+
+        if ((DegenFarmBase.Rarity)(rarity) == Rarity.Normie) {
+            return creaturesBorn[_type].leftChadToDiscover > 0;
+        }
+        if ((DegenFarmBase.Rarity)(rarity) == Rarity.Chad) {
+            return creaturesBorn[_type].leftDegenToDiscover > 0;
+        }
+        return false;
     }
 }
