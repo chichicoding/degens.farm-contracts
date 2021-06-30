@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: MIT
-// Degen Farm. Collectible NFT game
+// Degen Farm: El Dorado. Collectible NFT game
 pragma solidity ^0.7.4;
+pragma experimental ABIEncoderV2;
 
 import "./ERC721URIStorage.sol";
-import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/access/Ownable.sol";
 
-//v0.0.1
-contract Land is ERC721URIStorage, Ownable {
+contract Land is ERC721URIStorage {
 
-    uint256[] private _allTokens;
+    uint constant public MAP_HEIGHT = 50;
+    uint constant public LAND_TYPE_COUNT = 5;
+    enum LandType  { None, Clay, Sandy, Loamy, Chalky, Peaty }
+
+    struct LandPiece {
+        LandType atype; // uint8
+        int32    x;
+        int32    y;
+    }
+
+    mapping (uint256 => LandPiece) public lands;
 
     mapping(address => bool) public trusted_markets;
     event TrustedMarket(address indexed _market, bool _state);
@@ -17,25 +26,21 @@ contract Land is ERC721URIStorage, Ownable {
         string memory symbol_) ERC721(name_, symbol_)  {
     }
 
-    function mintWithURI(
-        address to,
-        uint256 tokenId,
-        string memory _tokenURI
-    ) external onlyOwner {
-
+    function mint(address to, uint256 tokenId) external onlyOwner {
+        int32 x = (int32)(tokenId / MAP_HEIGHT);
+        int32 y = (int32)(tokenId % MAP_HEIGHT);
+        LandPiece memory land = LandPiece(_createLandType(x, y), x, y);
+        lands[tokenId] = land;
         _mint(to, tokenId);
-        _setTokenURI(tokenId, _tokenURI);
-        _allTokens.push(tokenId);
+    }
+
+    function _createLandType(int32 x, int32 y) internal returns (LandType) {
+        uint256 rnd = uint(keccak256(abi.encodePacked(block.timestamp, msg.sender, totalSupply()))) % LAND_TYPE_COUNT;
+        return (LandType)(rnd + 1);
     }
 
     function burn(uint256 tokenId) external {
         _burn(tokenId);
-    }
-
-    //TODO Remove if not usefull
-    function setURI(uint256 tokenId, string memory _tokenURI) external {
-        require(ownerOf(tokenId) == msg.sender, 'Only owner can change URI.');
-        _setTokenURI(tokenId, _tokenURI);
     }
 
     function setTrustedMarket(address _market, bool _state) external onlyOwner {
@@ -44,29 +49,19 @@ contract Land is ERC721URIStorage, Ownable {
     }
 
     function getUsersTokens(address _owner) external view returns (uint256[] memory) {
-        //We can return only uint256[] memory, but we cant use push
-        // with memory arrays.
         //https://docs.soliditylang.org/en/v0.7.4/types.html#allocating-memory-arrays
         //So first we need calc size of array to be returned
-        //!!!!This will work  not for all _allTokens.length, checked for ~700
-        uint16 n = 0;
-        for (uint16 i=0; i<_allTokens.length; i++) {
-            if (ownerOf(_allTokens[i]) == _owner) {
-                n++;
-            }
-        }
+        uint256 n = balanceOf(_owner);
+
         uint256[] memory result = new uint256[](n);
-        for (uint16 i=0; i<_allTokens.length; i++) {
-            if (ownerOf(_allTokens[i]) == _owner) {
-                result[n-1]=_allTokens[i];
-                n--;
-            }
+        for (uint16 i=0; i < n; i++) {
+            result[i]=tokenOfOwnerByIndex(_owner, i);
         }
-        return  result;
+        return result;
     }
 
     function baseURI() public view  override returns (string memory) {
-        return 'https://degens.farm/V1/lands/';
+        return 'http://degens.farm/meta/lands/';
     }
 
     /**
