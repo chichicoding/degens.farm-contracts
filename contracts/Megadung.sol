@@ -4,15 +4,16 @@ pragma solidity ^0.7.4;
 
 import "OpenZeppelin/openzeppelin-contracts@3.4.0/contracts/token/ERC20/ERC20.sol";
 import "./MinterRole.sol";
+import "./IDung.sol";
 
 contract Megadung is ERC20, MinterRole {
     using SafeMath for uint256;
 
     uint256 public constant DUNG_PER_MEGADUNG = 1e15;
 
-    ERC20 public dung;
+    IDung public dung;
 
-    constructor(ERC20 _dung)
+    constructor(IDung _dung)
         ERC20("Degen$ Farm Giga Mega Dung", "MEGADUNG")
         MinterRole(msg.sender)
     {
@@ -48,15 +49,14 @@ contract Megadung is ERC20, MinterRole {
     }
 
     function wrap(uint amount) external {
-        dung.transferFrom(msg.sender, amount);
+        dung.transferFrom(msg.sender, address(this), amount);
         dung.burn(amount);
-        this.mint(amount/DUNG_PER_MEGADUNG);
+        _mint(msg.sender, amount/DUNG_PER_MEGADUNG);
     }
 
     function unwrap(uint amount) external {
-        this.transferFrom(msg.sender, amount);
-        this.burn(amount);
-        dung.mint(amount*DUNG_PER_MEGADUNG);
+        _burn(msg.sender, amount);
+        dung.mint(msg.sender, amount*DUNG_PER_MEGADUNG);
     }
 
 }
