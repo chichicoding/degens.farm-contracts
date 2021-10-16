@@ -42,8 +42,8 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
         uint256 _chainLinkFee,
         address _priceProviderAddress
     )
-        ERC721(name_, symbol_)
-        VRFConsumerBase(_vrfCoordinator, _link)
+    ERC721(name_, symbol_)
+    VRFConsumerBase(_vrfCoordinator, _link)
     {
         chainLinkFee = _chainLinkFee;
         chainLinkKeyHash = _chainLinkKeyHash;
@@ -85,8 +85,8 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
         bytes32 requestId,
         uint256 randomness
     )
-        internal
-        override
+    internal
+    override
     {
         uint tokenId = linkRequestId[requestId];
         delete linkRequestId[requestId];
@@ -128,11 +128,11 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
 
     function updatePrice(uint256 _tokenId) internal {
         (
-            uint80 roundID,
-            int price,
-            uint startedAt,
-            uint timeStamp,
-            uint80 answeredInRound
+        uint80 roundID,
+        int price,
+        uint startedAt,
+        uint timeStamp,
+        uint80 answeredInRound
         ) = AggregatorV3Interface(priceProviderAddress).latestRoundData();
 
         trees[_tokenId].prevPrice = trees[_tokenId].price;
@@ -145,5 +145,15 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
 
         trees[tokenId].name = _name;
         emit NameChange(tokenId, _name);
+    }
+
+    function getUsersTokens(address _owner) external view returns (uint256[] memory) {
+        uint256 n = balanceOf(_owner);
+
+        uint256[] memory result = new uint256[](n);
+        for (uint16 i = 0; i < n; i++) {
+            result[i] = tokenOfOwnerByIndex(_owner, i);
+        }
+        return result;
     }
 }
