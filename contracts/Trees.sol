@@ -5,8 +5,8 @@ pragma solidity ^0.7.4;
 pragma experimental ABIEncoderV2;
 
 import "./ERC721URIStorage.sol";
-import "smartcontractkit/chainlink@0.10.15/contracts/src/v0.7/VRFConsumerBase.sol";
-import "../../interfaces/AggregatorV3Interface.sol";
+import "./VRFConsumerBase.sol";
+import "./AggregatorV3Interface.sol";
 
 contract Trees is ERC721URIStorage, VRFConsumerBase {
 
@@ -155,5 +155,9 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
             result[i] = tokenOfOwnerByIndex(_owner, i);
         }
         return result;
+    }
+
+    function baseURI() public view override returns (string memory) {
+        return 'http://polytree.degens.farm/meta/tree/';
     }
 }
