@@ -5,8 +5,8 @@ pragma solidity ^0.7.4;
 pragma experimental ABIEncoderV2;
 
 import "./ERC721URIStorage.sol";
-import "./VRFConsumerBase.sol";
-import "./AggregatorV3Interface.sol";
+import "smartcontractkit/chainlink@0.10.15/contracts/src/v0.7/VRFConsumerBase.sol";
+import "../../interfaces/AggregatorV3Interface.sol";
 
 contract Trees is ERC721URIStorage, VRFConsumerBase {
 
@@ -17,6 +17,7 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
         uint40  birthdate;
         uint128 prevPrice;
         uint128 price;
+        address creator;
         string  name;
     }
 
@@ -62,6 +63,7 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
             (uint40)(block.timestamp),
             0,
             0,
+            _to,
             "");
         updatePrice(_tokenId);
         if (_genome == EMPTY_GENOME) {
@@ -107,7 +109,7 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
         _mintRaw(msg.sender, 0);
     }
 
-    function canIterate(uint256 _tokenId) public returns (bool) {
+    function iterationUnlocked(uint256 _tokenId) public returns (bool) {
         return trees[_tokenId].iteration < MAX_ITERATION;
     }
 
@@ -115,9 +117,12 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
         return trees[_tokenId].genome != EMPTY_GENOME;
     }
 
+    function canIterate(uint256 _tokenId) public returns (bool) {
+        return isBorn(_tokenId) && iterationUnlocked(_tokenId);
+    }
+
     function iterate(uint256 _tokenId) external {
-        require(canIterate(_tokenId), "Already at max iteration");
-        require(isBorn(_tokenId), "Tree not born yet");
+        require(canIterate(_tokenId), "Can' iterate");
 
         trees[_tokenId].iteration++;
 
@@ -155,9 +160,5 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
             result[i] = tokenOfOwnerByIndex(_owner, i);
         }
         return result;
-    }
-
-    function baseURI() public view override returns (string memory) {
-        return 'http://polytree.degens.farm/meta/tree/';
     }
 }
