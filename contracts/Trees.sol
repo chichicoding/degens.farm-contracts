@@ -10,6 +10,9 @@ import "../../interfaces/AggregatorV3Interface.sol";
 
 contract Trees is ERC721URIStorage, VRFConsumerBase {
 
+    using Strings for uint256;
+    using Strings for uint16;
+
     struct Tree {
         // zero genome means that genome is not set yet
         uint256 genome;
@@ -160,5 +163,42 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
             result[i] = tokenOfOwnerByIndex(_owner, i);
         }
         return result;
+    }
+
+    function getUsersTokensWithIteration(address _owner) external view returns (uint256[] memory) {
+        uint256 n = balanceOf(_owner);
+
+        uint256[] memory result = new uint256[](n*2);
+        for (uint16 i = 0; i < n; i++) {
+            uint tokenId = tokenOfOwnerByIndex(_owner, i);
+            result[i*2] =
+            result[i*2 + 1] = trees[tokenId].iteration;
+        }
+        return result;
+    }
+
+    function baseURI() public view override returns (string memory) {
+        return 'http://polytrees.degens.farm/meta/tree/';
+    }
+
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        require(_exists(tokenId), "ERC721URIStorage: URI query for nonexistent token");
+
+        string memory _tokenURI = _tokenURIs[tokenId];
+        string memory base = baseURI();
+
+        // If there is no base URI, return the token URI.
+        if (bytes(base).length == 0) {
+            return _tokenURI;
+        }
+        // If both are set, concatenate the baseURI and tokenURI (via abi.encodePacked).
+        if (bytes(_tokenURI).length > 0) {
+            //return string(abi.encodePacked(base, _tokenURI));
+            //Due customer requirements
+            return _tokenURI;
+        }
+
+        // If there is a baseURI but no tokenURI, concatenate the tokenID to the baseURI.
+        return string(abi.encodePacked(base, tokenId.toString(), '/', trees[tokenId].iteration.toString()));
     }
 }
