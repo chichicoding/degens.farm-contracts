@@ -59,7 +59,6 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
         uint256 _genome
     ) internal {
         uint _tokenId = totalSupply();
-        _mint(_to, _tokenId);
         trees[_tokenId] = Tree(
             _genome,
             0,
@@ -105,6 +104,7 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
     }
 
     function onBirth(uint256 _tokenId) internal {
+        _mint(trees[_tokenId].creator, _tokenId);
         emit Birth(_tokenId);
     }
 
@@ -126,11 +126,8 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
 
     function iterate(uint256 _tokenId) external {
         require(canIterate(_tokenId), "Can' iterate");
-
         trees[_tokenId].iteration++;
-
         updatePrice(_tokenId);
-
         emit Iterated(_tokenId);
     }
 
