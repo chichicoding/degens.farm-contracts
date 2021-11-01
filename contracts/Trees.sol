@@ -1,5 +1,28 @@
 // SPDX-License-Identifier: MIT
-// Degen'$ Farm: Collectible NFT game (https://degens.farm)
+// Degen'$ Farm: Collectible NFT game (https://smartrees.degens.farm)
+/*
+                                             ..
+                                             /(((// /,/
+                                            //(#///(#(/
+                                              #  ((//
+                                             (#.#/
+                                      /(     ###(
+                       // /(/////#// #///,  ##%.
+                        /(*,(/ /(/.##      (##
+                               ##  ((     ,#((
+                                 ##%#    (#(.
+                                   ,((( (#(.
+                                     (((#(
+                                       ((#
+                                       (#(
+                                       (#(
+                                       (#(
+                                  *****(#(****
+                              ********(#(#*********
+                            *********#/#%(//*********
+                                ,***************,
+                                    ,*******
+*/
 
 pragma solidity ^0.7.4;
 pragma experimental ABIEncoderV2;
@@ -25,7 +48,7 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
     }
 
     mapping (uint256 => Tree) public trees;
-    uint constant public MAX_ITERATION = 10;
+    uint public MAX_ITERATION = 10;
     uint constant public EMPTY_GENOME = 0;
     mapping (bytes32 => uint) public linkRequestId;
     uint256 public chainLinkFee;
@@ -175,7 +198,7 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
     }
 
     function baseURI() public view override returns (string memory) {
-        return 'http://polytrees.degens.farm/meta/tree/';
+        return 'http://bitreemeta.degens.farm/meta/tree/';
     }
 
     function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
@@ -197,5 +220,9 @@ contract Trees is ERC721URIStorage, VRFConsumerBase {
 
         // If there is a baseURI but no tokenURI, concatenate the tokenID to the baseURI.
         return string(abi.encodePacked(base, tokenId.toString(), '/', trees[tokenId].iteration.toString()));
+    }
+
+    function setMaxIteration(uint newValue) external onlyOwner {
+        MAX_ITERATION = newValue;
     }
 }
